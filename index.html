@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Clinical Iowa Gambling Task (cIGT) - Live Lab</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Chart.js for Visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,400&family=Space+Grotesk:wght@500;700&display=swap');
+        
+        /* 核心防護：確保即便 CDN 載入中，hidden 元素絕對不會同時穿幫曝光 */
+        .hidden {
+            display: none !important;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #d4d8de;
+            color: #1e293b;
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+
+        .heading-font {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        /* 經典 IGT 撲克牌外觀與比例 (四角圓角、觸控回饋) */
+        .poker-card {
+            perspective: 1000px;
+            transition: transform 0.08s ease, filter 0.08s ease;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+            aspect-ratio: 2 / 3.1;
+            max-width: 72px;
+            width: 100%;
+            border-radius: 6px;
+        }
+
+        @media (min-width: 640px) {
+            .poker-card {
+                max-width: 110px;
+                border-radius: 8px;
+            }
+        }
+
+        /* 針對手機橫向與矮螢幕的極限自適應：確保包含最底部資訊列絕對不被截斷 */
+        @media (max-height: 520px) {
+            .cigt-stage-box {
+                padding: 3px 6px !important;
+                gap: 2px !important;
+                max-height: 98dvh !important;
+            }
+            .cigt-meter-box {
+                padding: 1px 6px !important;
+            }
+            .cigt-meter-bar {
+                height: 7px !important;
+            }
+            .cigt-prompt-title {
+                margin: 1px 0 !important;
+                font-size: 10px !important;
+                line-height: 1.1 !important;
+            }
+            .cigt-slot-box {
+                height: 14px !important;
+                margin-bottom: 1px !important;
+                font-size: 7px !important;
+            }
+            .poker-card {
+                max-height: 30dvh !important;
+                max-width: 11.5vw !important;
+                border-radius: 3px !important;
+                padding: 1px !important;
+            }
+            .cigt-deck-label {
+                margin-top: 1px !important;
+                font-size: 9px !important;
+                line-height: 1 !important;
+            }
+            .cigt-footer-bar {
+                padding: 1.5px 6px !important;
+                margin-top: 1px !important;
+                font-size: 8px !important;
+            }
+        }
+
+        .poker-card:active:not(:disabled) {
+            transform: scale(0.96);
+            filter: brightness(1.1);
+        }
+
+        .poker-card:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            filter: grayscale(0.2);
+        }
+
+        /* 經典高利害賭局紅格紋牌背 (精準還原截圖) */
+        .kmu-card-back {
+            background-color: #a81c1c;
+            background-image: 
+                repeating-linear-gradient(45deg, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 2.5px, transparent 0, transparent 5px),
+                repeating-linear-gradient(-45deg, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 2.5px, transparent 0, transparent 5px),
+                radial-gradient(circle at 50% 50%, #c52222 0%, #851313 100%);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.25), inset 0 0 4px rgba(0,0,0,0.3);
+        }
+
+        .glass-panel {
+            background: #0f172a;
+            color: #f8fafc;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* 旋轉提示動畫 */
+        @keyframes rotate-phone {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
+        }
+        .animate-rotate-hint {
+            animation: rotate-phone 2s infinite ease-in-out;
+        }
+
+        /* 在小於 768px 直向手機螢幕下提示橫向，但提供一鍵繼續按鈕 */
+        @media screen and (orientation: portrait) and (max-width: 768px) {
+            #portraitRotateHint {
+                display: flex !important;
+            }
+        }
+    </style>
+</head>
+<body class="w-full flex flex-col justify-center items-center selection:bg-teal-500 selection:text-white antialiased overflow-x-hidden">
+
+    <!-- Orientation Reminder for Portrait Mode on Mobile Phones -->
+    <div id="portraitRotateHint" class="hidden fixed inset-0 z-50 bg-slate-950/95 text-white flex flex-col items-center justify-center p-4 text-center backdrop-blur-md">
+        <div class="w-14 h-14 rounded-2xl bg-teal-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 text-2xl mb-3 animate-rotate-hint">
+            <i class="fa-solid fa-mobile-screen-button"></i>
+        </div>
+        <h3 class="heading-font text-base font-bold text-white mb-1.5">Please Rotate Your Phone</h3>
+        <p class="text-[11px] text-slate-300 max-w-xs leading-relaxed mb-4">
+            This clinical experiment is designed for horizontal (landscape) mode to mirror the standardized computer laboratory interface.
+        </p>
+        <button onclick="document.getElementById('portraitRotateHint').style.setProperty('display', 'none', 'important')" class="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-slate-950 font-bold text-xs shadow active:scale-95 transition">
+            Continue in Portrait Mode
+        </button>
+    </div>
+
+    <!-- ================= VIEW 1: WELCOME & BRIEFING ================= -->
+    <section id="viewWelcome" class="w-full min-h-[100dvh] flex items-center justify-center p-2.5 sm:p-4 bg-slate-950 overflow-y-auto">
+        <div class="glass-panel p-3.5 sm:p-5 rounded-xl shadow-2xl border border-slate-700/60 max-w-lg w-full relative overflow-hidden my-auto">
+            <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/30 text-teal-300 text-[10px] sm:text-xs font-medium">
+                    <i class="fa-solid fa-flask-vial"></i> Standardized Briefing
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono"><i class="fa-solid fa-gamepad mr-1"></i> cIGT Lab</span>
+            </div>
+
+            <h2 class="heading-font text-lg sm:text-xl font-bold text-white mb-1 leading-tight">
+                Clinical Iowa Gambling Task
+            </h2>
+
+            <p class="text-slate-300 text-[11px] sm:text-xs mb-3 leading-relaxed">
+                Make 100 card selections. Your objective is to <strong class="text-teal-300 font-semibold">maximize total profit and avoid losing money</strong>.
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <div class="text-teal-400 text-xs mb-0.5"><i class="fa-solid fa-wallet"></i> <strong>$5,000 Loan</strong></div>
+                    <p class="text-[10px] text-slate-400 leading-tight">Wins add to bonus. Losses deduct from bonus, then principal.</p>
+                </div>
+                <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <div class="text-cyan-400 text-xs mb-0.5"><i class="fa-solid fa-hand-pointer"></i> <strong>Free Choice</strong></div>
+                    <p class="text-[10px] text-slate-400 leading-tight">Pick from Decks A, B, C, or D. Switch freely at any time.</p>
+                </div>
+                <div class="bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                    <div class="text-amber-400 text-xs mb-0.5"><i class="fa-solid fa-triangle-exclamation"></i> <strong>Clinical Hint</strong></div>
+                    <p class="text-[10px] text-slate-400 leading-tight">Some decks are worse than others. Avoiding them is how you win.</p>
+                </div>
+            </div>
+
+            <button id="btnStartGame" class="w-full py-2.5 rounded-lg bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-bold text-xs tracking-wide shadow-md shadow-teal-500/25 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <span>Start Experiment</span>
+                <i class="fa-solid fa-arrow-right text-[11px]"></i>
+            </button>
+        </div>
+    </section>
+
+    <!-- ================= VIEW 2: CLINICAL EXPERIMENT SCREEN ================= -->
+    <section id="viewExperiment" class="hidden w-full h-[100dvh] max-h-[100dvh] bg-[#d4d8de] flex flex-col items-center justify-center p-1 sm:p-3 select-none overflow-hidden touch-manipulation relative">
+        
+        <!-- 全螢幕切換懸浮小按鈕 (右上角) -->
+        <button id="btnToggleFullscreen" onclick="toggleFullScreen()" class="absolute top-1.5 right-2 sm:top-3 sm:right-4 z-30 px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-white text-[9px] sm:text-xs font-mono border border-slate-600/70 shadow backdrop-blur transition flex items-center gap-1 active:scale-95" title="Toggle Fullscreen">
+            <i class="fa-solid fa-expand" id="iconFullscreen"></i>
+            <span class="hidden sm:inline" id="textFullscreen">Fullscreen</span>
+        </button>
+
+        <!-- 截圖同款主視窗容器 (精確的灰藍邊框、內縮與投影) -->
+        <div class="cigt-stage-box w-full max-w-lg md:max-w-2xl bg-[#dfe3e8] rounded-xl border border-slate-400/90 shadow-lg p-2 sm:p-3.5 flex flex-col justify-between items-center my-auto max-h-[96dvh]">
+            
+            <!-- 雙量表：Bonus 與 Principal 本金 (1:1 還原截圖雙軸刻度與白底框) -->
+            <div class="cigt-meter-box w-full bg-white px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-md border border-slate-300 shadow-sm shrink-0">
+                <!-- 上方刻度 (0 to 6000) -->
+                <div class="flex justify-between text-[7px] sm:text-[9px] font-mono text-slate-600 pl-11 sm:pl-16 pr-0.5 mb-0.5">
+                    <span>0</span>
+                    <span>1000</span>
+                    <span>2000</span>
+                    <span>3000</span>
+                    <span>4000</span>
+                    <span>5000</span>
+                    <span>6000</span>
+                </div>
+
+                <!-- 第一條：Bonus 量表 -->
+                <div class="flex items-center gap-1.5 sm:gap-2.5 mb-0.5 sm:mb-1">
+                    <div class="w-10 sm:w-14 text-right font-medium text-[8px] sm:text-[10px] text-slate-800 tracking-tight shrink-0">Bonus</div>
+                    <div class="cigt-meter-bar flex-grow h-2 sm:h-3 bg-white border border-slate-400 relative overflow-hidden rounded-[2px]">
+                        <div class="absolute inset-0 grid grid-cols-6 pointer-events-none">
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                        </div>
+                        <div id="barBonus" class="h-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-150 relative z-10" style="width: 0%;"></div>
+                    </div>
+                </div>
+
+                <!-- 第二條：Principal 本金量表 (初始 5000) -->
+                <div class="flex items-center gap-1.5 sm:gap-2.5">
+                    <div class="w-10 sm:w-14 text-right font-medium text-[8px] sm:text-[10px] text-slate-800 tracking-tight shrink-0">Principal</div>
+                    <div class="cigt-meter-bar flex-grow h-2 sm:h-3 bg-white border border-slate-400 relative overflow-hidden rounded-[2px]">
+                        <div class="absolute inset-0 grid grid-cols-6 pointer-events-none">
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                            <div class="border-r border-slate-300 h-full"></div>
+                        </div>
+                        <div id="barPrincipal" class="h-full bg-[#1d4ed8] transition-all duration-150 relative z-10" style="width: 83.33%;"></div>
+                    </div>
+                </div>
+
+                <!-- 下方刻度與計量單位 -->
+                <div class="flex items-center justify-between text-[7px] sm:text-[9px] font-mono text-slate-600 pl-11 sm:pl-16 pr-0.5 mt-0.5">
+                    <div class="flex justify-between flex-grow mr-2">
+                        <span>0</span>
+                        <span>1000</span>
+                        <span>2000</span>
+                        <span>3000</span>
+                        <span>4000</span>
+                        <span>5000</span>
+                        <span>6000</span>
+                    </div>
+                    <div class="font-sans font-medium text-slate-700 text-[7px] sm:text-[9px] whitespace-nowrap">Unit ($)</div>
+                </div>
+            </div>
+
+            <!-- 操作提示標題 (還原截圖字體樣式與居中) -->
+            <div class="text-center my-1 sm:my-2 shrink-0">
+                <h3 class="cigt-prompt-title text-xs sm:text-sm font-bold text-slate-900 tracking-normal font-serif">
+                    Please Select a Card
+                </h3>
+            </div>
+
+            <!-- 四疊牌 (A, B, C, D) 與上方獨立圓角 Slot (1:1 還原截圖) -->
+            <div class="grid grid-cols-4 gap-1.5 sm:gap-3 w-full px-0.5 items-center justify-items-center my-auto">
+                
+                <!-- Deck A -->
+                <div class="flex flex-col items-center w-full">
+                    <div id="slotA" class="cigt-slot-box w-full max-w-[72px] sm:max-w-[110px] h-4 sm:h-6 bg-white border border-slate-300 rounded shadow-sm mb-1 sm:mb-1.5 flex flex-col items-center justify-center text-[7px] sm:text-[9px] font-bold transition-all shrink-0">
+                        <span class="text-slate-400 font-mono text-[7px] sm:text-[8px]">--</span>
+                    </div>
+                    <button id="cardA" onclick="handleDeckSelection('A')" class="poker-card kmu-card-back flex flex-col justify-between items-center p-1 sm:p-1.5 cursor-pointer shadow">
+                        <span class="text-[5px] sm:text-[7px] text-white/70 font-mono">cIGT</span>
+                        <div class="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white text-[7px] sm:text-[10px]">♠</div>
+                        <span class="text-[5px] sm:text-[7px] text-white/50 font-mono">A</span>
+                    </button>
+                    <span class="cigt-deck-label mt-0.5 sm:mt-1 text-[10px] sm:text-xs font-bold text-slate-900 font-serif">A</span>
+                </div>
+
+                <!-- Deck B -->
+                <div class="flex flex-col items-center w-full">
+                    <div id="slotB" class="cigt-slot-box w-full max-w-[72px] sm:max-w-[110px] h-4 sm:h-6 bg-white border border-slate-300 rounded shadow-sm mb-1 sm:mb-1.5 flex flex-col items-center justify-center text-[7px] sm:text-[9px] font-bold transition-all shrink-0">
+                        <span class="text-slate-400 font-mono text-[7px] sm:text-[8px]">--</span>
+                    </div>
+                    <button id="cardB" onclick="handleDeckSelection('B')" class="poker-card kmu-card-back flex flex-col justify-between items-center p-1 sm:p-1.5 cursor-pointer shadow">
+                        <span class="text-[5px] sm:text-[7px] text-white/70 font-mono">cIGT</span>
+                        <div class="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white text-[7px] sm:text-[10px]">♦</div>
+                        <span class="text-[5px] sm:text-[7px] text-white/50 font-mono">B</span>
+                    </button>
+                    <span class="cigt-deck-label mt-0.5 sm:mt-1 text-[10px] sm:text-xs font-bold text-slate-900 font-serif">B</span>
+                </div>
+
+                <!-- Deck C -->
+                <div class="flex flex-col items-center w-full">
+                    <div id="slotC" class="cigt-slot-box w-full max-w-[72px] sm:max-w-[110px] h-4 sm:h-6 bg-white border border-slate-300 rounded shadow-sm mb-1 sm:mb-1.5 flex flex-col items-center justify-center text-[7px] sm:text-[9px] font-bold transition-all shrink-0">
+                        <span class="text-slate-400 font-mono text-[7px] sm:text-[8px]">--</span>
+                    </div>
+                    <button id="cardC" onclick="handleDeckSelection('C')" class="poker-card kmu-card-back flex flex-col justify-between items-center p-1 sm:p-1.5 cursor-pointer shadow">
+                        <span class="text-[5px] sm:text-[7px] text-white/70 font-mono">cIGT</span>
+                        <div class="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white text-[7px] sm:text-[10px]">♣</div>
+                        <span class="text-[5px] sm:text-[7px] text-white/50 font-mono">C</span>
+                    </button>
+                    <span class="cigt-deck-label mt-0.5 sm:mt-1 text-[10px] sm:text-xs font-bold text-slate-900 font-serif">C</span>
+                </div>
+
+                <!-- Deck D -->
+                <div class="flex flex-col items-center w-full">
+                    <div id="slotD" class="cigt-slot-box w-full max-w-[72px] sm:max-w-[110px] h-4 sm:h-6 bg-white border border-slate-300 rounded shadow-sm mb-1 sm:mb-1.5 flex flex-col items-center justify-center text-[7px] sm:text-[9px] font-bold transition-all shrink-0">
+                        <span class="text-slate-400 font-mono text-[7px] sm:text-[8px]">--</span>
+                    </div>
+                    <button id="cardD" onclick="handleDeckSelection('D')" class="poker-card kmu-card-back flex flex-col justify-between items-center p-1 sm:p-1.5 cursor-pointer shadow">
+                        <span class="text-[5px] sm:text-[7px] text-white/70 font-mono">cIGT</span>
+                        <div class="w-3.5 h-3.5 sm:w-5 sm:h-5 rounded-full bg-white/20 border border-white/40 flex items-center justify-center text-white text-[7px] sm:text-[10px]">♥</div>
+                        <span class="text-[5px] sm:text-[7px] text-white/50 font-mono">D</span>
+                    </button>
+                    <span class="cigt-deck-label mt-0.5 sm:mt-1 text-[10px] sm:text-xs font-bold text-slate-900 font-serif">D</span>
+                </div>
+            </div>
+
+            <!-- 最下方回饋資訊列 (還原截圖的白底、圓角框、左側提示與右側藍色等寬總金額) -->
+            <div class="cigt-footer-bar w-full px-2.5 sm:px-3 py-1 bg-white rounded border border-slate-300 flex items-center justify-between text-[7px] sm:text-[9px] font-mono text-slate-800 shadow-sm shrink-0 mt-1">
+                <div class="truncate mr-2">
+                    <span class="font-bold">Latest:</span>
+                    <span id="kmuPayoffLog" class="text-slate-900 font-medium">Ready. Tap any card to begin.</span>
+                </div>
+                <div class="whitespace-nowrap shrink-0">
+                    <span class="text-slate-600">Total:</span>
+                    <span id="kmuCurrentTotal" class="font-bold text-[#1d4ed8] font-mono text-[8px] sm:text-[11px] ml-1">$5,000</span>
+                </div>
+            </div>
+
+        </div>
+
+    </section>
+
+    <!-- ================= VIEW 3: CLINICAL DEBRIEFING REPORT ================= -->
+    <section id="viewResults" class="hidden w-full min-h-[100dvh] bg-slate-950 p-2.5 sm:p-5 flex-col gap-2.5 max-w-5xl mx-auto pb-10 overflow-y-auto">
+        <div class="glass-panel p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2">
+            <div>
+                <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 text-[9px] font-mono mb-0.5">
+                    <i class="fa-solid fa-clipboard-check"></i> cIGT Complete
+                </div>
+                <h2 class="heading-font text-sm sm:text-lg font-bold text-white">
+                    cIGT Debriefing Report
+                </h2>
+                <p class="text-[10px] sm:text-[11px] text-slate-400">
+                    Final Capital: <span id="resFinalCapital" class="font-mono font-bold text-emerald-400 text-xs sm:text-sm">$0</span>
+                    (Loan: $5,000)
+                </p>
+            </div>
+
+            <!-- Net Score Summary Pill -->
+            <div class="flex items-center gap-1.5 sm:gap-2 bg-slate-900/90 px-2 sm:px-3 py-1 rounded-lg border border-slate-700">
+                <div>
+                    <div class="text-[8px] text-slate-400 uppercase font-semibold">Net Score</div>
+                    <div class="text-[7px] text-slate-500 font-mono">(C + D) − (A + B)</div>
+                    <div id="resNetScore" class="text-base sm:text-lg font-black font-mono text-cyan-400">0</div>
+                </div>
+                <div id="resNetBadge" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                    Neutral
+                </div>
+            </div>
+        </div>
+
+        <!-- Selection Breakdown Grid (The 4 Decks) -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+            <div class="glass-panel p-2 rounded-lg border-l-4 border-amber-500">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="font-bold text-amber-400 text-xs">Deck A</span>
+                    <span class="text-[8px] px-1 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">Frequent Loss</span>
+                </div>
+                <div class="text-base sm:text-lg font-bold font-mono text-white" id="statCountA">0</div>
+                <div class="text-[8px] text-slate-400">Exp: -3,750 / 10</div>
+            </div>
+
+            <div class="glass-panel p-2 rounded-lg border-l-4 border-rose-500">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="font-bold text-rose-400 text-xs">Deck B</span>
+                    <span class="text-[8px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 font-mono font-semibold">90% Win Freq</span>
+                </div>
+                <div class="text-base sm:text-lg font-bold font-mono text-white" id="statCountB">0</div>
+                <div class="text-[8px] text-slate-400">Exp: -3,750 / 10</div>
+            </div>
+
+            <div class="glass-panel p-2 rounded-lg border-l-4 border-teal-500">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="font-bold text-teal-400 text-xs">Deck C</span>
+                    <span class="text-[8px] px-1 py-0.2 rounded bg-slate-800 text-slate-300 font-mono">Frequent Loss</span>
+                </div>
+                <div class="text-base sm:text-lg font-bold font-mono text-white" id="statCountC">0</div>
+                <div class="text-[8px] text-slate-400">Exp: +1,875 / 10</div>
+            </div>
+
+            <div class="glass-panel p-2 rounded-lg border-l-4 border-emerald-500">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="font-bold text-emerald-400 text-xs">Deck D</span>
+                    <span class="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-semibold">90% Win Freq</span>
+                </div>
+                <div class="text-base sm:text-lg font-bold font-mono text-white" id="statCountD">0</div>
+                <div class="text-[8px] text-slate-400">Exp: +1,875 / 10</div>
+            </div>
+        </div>
+
+        <!-- Visual Dynamics Section -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-3">
+            <div class="glass-panel p-2.5 rounded-lg border border-slate-800">
+                <h3 class="font-bold text-xs text-slate-300 mb-1 flex items-center gap-1">
+                    <i class="fa-solid fa-chart-simple text-teal-400"></i> Deck Selections
+                </h3>
+                <div class="h-28 sm:h-32 relative">
+                    <canvas id="chartDistribution"></canvas>
+                </div>
+            </div>
+
+            <div class="glass-panel p-2.5 rounded-lg border border-slate-800 md:col-span-2">
+                <div class="flex items-center justify-between gap-1 mb-1">
+                    <h3 class="font-bold text-xs text-slate-300 flex items-center gap-1">
+                        <i class="fa-solid fa-chart-line text-cyan-400"></i> 4-Deck Trajectory Across 5 Blocks
+                    </h3>
+                    <span class="text-[8px] font-mono text-cyan-300 bg-cyan-950 px-1 py-0.2 rounded border border-cyan-800">
+                        20 / Block
+                    </span>
+                </div>
+                <div class="h-28 sm:h-32 relative">
+                    <canvas id="chartFourDecks"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Net Score Dynamics Across 5 Blocks -->
+        <div class="glass-panel p-2.5 rounded-lg border border-slate-800">
+            <div class="flex items-center justify-between gap-1 mb-1">
+                <h3 class="font-bold text-xs text-slate-300 flex items-center gap-1">
+                    <i class="fa-solid fa-wave-square text-teal-400"></i> Net Score Dynamics Across Blocks
+                </h3>
+                <span class="text-[8px] text-slate-400 font-mono">(C + D) − (A + B)</span>
+            </div>
+            <div class="h-28 relative">
+                <canvas id="chartLearningCurve"></canvas>
+            </div>
+        </div>
+
+        <!-- Debriefing Insight Card -->
+        <div class="glass-panel p-3 rounded-xl border border-amber-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/20">
+            <div class="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
+                <i class="fa-solid fa-lightbulb text-xs"></i>
+                <h3 class="text-xs heading-font">Win Frequency vs. Expected Value</h3>
+            </div>
+            <p class="text-[10px] text-slate-300 leading-relaxed mb-2.5">
+                Did you favor <strong>Deck B</strong> and <strong>Deck D</strong>? Both decks deliver a <strong>90% win frequency without penalty</strong>. Human intuition is often guided by immediate gain frequency rather than mathematical expected value.
+            </p>
+            <button onclick="resetAndRestartExperiment()" class="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-600 active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer">
+                <i class="fa-solid fa-rotate-right"></i>
+                <span>Restart for Next Student</span>
+            </button>
+        </div>
+    </section>
+
+    <script>
+        // 完全保持原有真實 cIGT 報酬與懲罰排程，未做任何修改
+        const CIGT_PAYOFF_SCHEDULE = [
+            // Trial 1
+            { A: { win: 100, loss: 0 },    B: { win: 100, loss: 0 },     C: { win: 50, loss: 0 },    D: { win: 50, loss: 0 } },
+            // Trial 2
+            { A: { win: 120, loss: 0 },    B: { win: 80, loss: 0 },      C: { win: 60, loss: 0 },    D: { win: 40, loss: 0 } },
+            // Trial 3
+            { A: { win: 80, loss: -150 },  B: { win: 110, loss: 0 },     C: { win: 40, loss: -50 },  D: { win: 45, loss: 0 } },
+            // Trial 4
+            { A: { win: 90, loss: 0 },     B: { win: 120, loss: 0 },     C: { win: 55, loss: 0 },    D: { win: 45, loss: 0 } },
+            // Trial 5
+            { A: { win: 110, loss: -300 }, B: { win: 90, loss: 0 },      C: { win: 55, loss: -50 },  D: { win: 55, loss: 0 } },
+            // Trial 6
+            { A: { win: 100, loss: 0 },    B: { win: 100, loss: 0 },     C: { win: 45, loss: 0 },    D: { win: 60, loss: 0 } },
+            // Trial 7
+            { A: { win: 80, loss: -200 },  B: { win: 90, loss: 0 },      C: { win: 50, loss: -50 },  D: { win: 40, loss: 0 } },
+            // Trial 8
+            { A: { win: 120, loss: 0 },    B: { win: 120, loss: 0 },     C: { win: 45, loss: 0 },    D: { win: 55, loss: 0 } },
+            // Trial 9
+            { A: { win: 110, loss: -250 }, B: { win: 110, loss: -1250 }, C: { win: 60, loss: -50 },  D: { win: 50, loss: 0 } },
+            // Trial 10
+            { A: { win: 90, loss: -350 },  B: { win: 80, loss: 0 },      C: { win: 40, loss: -50 },  D: { win: 60, loss: -250 } },
+
+            // Trial 11
+            { A: { win: 110, loss: 0 },    B: { win: 110, loss: 0 },     C: { win: 55, loss: 0 },    D: { win: 55, loss: 0 } },
+            // Trial 12
+            { A: { win: 130, loss: -350 }, B: { win: 100, loss: 0 },     C: { win: 55, loss: -25 },  D: { win: 40, loss: 0 } },
+            // Trial 13
+            { A: { win: 90, loss: 0 },     B: { win: 90, loss: 0 },      C: { win: 65, loss: -75 },  D: { win: 60, loss: 0 } },
+            // Trial 14
+            { A: { win: 100, loss: -250 }, B: { win: 130, loss: -1500 }, C: { win: 45, loss: 0 },    D: { win: 40, loss: 0 } },
+            // Trial 15
+            { A: { win: 120, loss: -200 }, B: { win: 120, loss: 0 },     C: { win: 70, loss: -25 },  D: { win: 45, loss: 0 } },
+            // Trial 16
+            { A: { win: 110, loss: 0 },    B: { win: 130, loss: 0 },     C: { win: 40, loss: 0 },    D: { win: 55, loss: 0 } },
+            // Trial 17
+            { A: { win: 90, loss: -300 },  B: { win: 110, loss: 0 },     C: { win: 50, loss: -25 },  D: { win: 65, loss: 0 } },
+            // Trial 18
+            { A: { win: 130, loss: -150 }, B: { win: 90, loss: 0 },      C: { win: 60, loss: -75 },  D: { win: 70, loss: 0 } },
+            // Trial 19
+            { A: { win: 120, loss: -250 }, B: { win: 100, loss: 0 },     C: { win: 70, loss: 0 },    D: { win: 50, loss: 0 } },
+            // Trial 20
+            { A: { win: 100, loss: 0 },    B: { win: 120, loss: 0 },     C: { win: 40, loss: -50 },  D: { win: 70, loss: -275 } },
+
+            // Trial 21
+            { A: { win: 120, loss: -250 }, B: { win: 120, loss: -1750 }, C: { win: 60, loss: 0 },    D: { win: 60, loss: 0 } },
+            // Trial 22
+            { A: { win: 140, loss: -300 }, B: { win: 110, loss: 0 },     C: { win: 65, loss: -25 },  D: { win: 55, loss: 0 } },
+            // Trial 23
+            { A: { win: 110, loss: 0 },    B: { win: 140, loss: 0 },     C: { win: 55, loss: 0 },    D: { win: 65, loss: 0 } },
+            // Trial 24
+            { A: { win: 110, loss: -350 }, B: { win: 130, loss: 0 },     C: { win: 80, loss: -50 },  D: { win: 80, loss: 0 } },
+            // Trial 25
+            { A: { win: 100, loss: 0 },    B: { win: 100, loss: 0 },     C: { win: 40, loss: -25 },  D: { win: 40, loss: 0 } },
+            // Trial 26
+            { A: { win: 120, loss: -200 }, B: { win: 110, loss: 0 },     C: { win: 60, loss: -50 },  D: { win: 80, loss: 0 } },
+            // Trial 27
+            { A: { win: 130, loss: -250 }, B: { win: 120, loss: 0 },     C: { win: 55, loss: 0 },    D: { win: 40, loss: 0 } },
+            // Trial 28
+            { A: { win: 110, loss: -150 }, B: { win: 120, loss: 0 },     C: { win: 65, loss: -25 },  D: { win: 65, loss: 0 } },
+            // Trial 29
+            { A: { win: 140, loss: -250 }, B: { win: 140, loss: 0 },     C: { win: 40, loss: -75 },  D: { win: 55, loss: -300 } },
+            // Trial 30
+            { A: { win: 120, loss: 0 },    B: { win: 110, loss: 0 },     C: { win: 80, loss: -50 },  D: { win: 60, loss: 0 } },
+
+            // Trial 31
+            { A: { win: 130, loss: -350 }, B: { win: 130, loss: 0 },     C: { win: 65, loss: -25 },  D: { win: 65, loss: 0 } },
+            // Trial 32
+            { A: { win: 120, loss: -200 }, B: { win: 140, loss: -2000 }, C: { win: 75, loss: 0 },    D: { win: 75, loss: 0 } },
+            // Trial 33
+            { A: { win: 140, loss: -250 }, B: { win: 120, loss: 0 },     C: { win: 55, loss: -25 },  D: { win: 60, loss: 0 } },
+            // Trial 34
+            { A: { win: 130, loss: -250 }, B: { win: 110, loss: 0 },     C: { win: 60, loss: -25 },  D: { win: 65, loss: 0 } },
+            // Trial 35
+            { A: { win: 110, loss: -150 }, B: { win: 130, loss: 0 },     C: { win: 70, loss: -25 },  D: { win: 75, loss: -325 } },
+            // Trial 36
+            { A: { win: 150, loss: 0 },    B: { win: 150, loss: 0 },     C: { win: 65, loss: 0 },    D: { win: 85, loss: 0 } },
+            // Trial 37
+            { A: { win: 140, loss: -150 }, B: { win: 110, loss: 0 },     C: { win: 55, loss: -75 },  D: { win: 45, loss: 0 } },
+            // Trial 38
+            { A: { win: 120, loss: -300 }, B: { win: 150, loss: 0 },     C: { win: 75, loss: -25 },  D: { win: 55, loss: 0 } },
+            // Trial 39
+            { A: { win: 150, loss: -350 }, B: { win: 120, loss: 0 },     C: { win: 45, loss: -50 },  D: { win: 70, loss: 0 } },
+            // Trial 40
+            { A: { win: 110, loss: 0 },    B: { win: 140, loss: 0 },     C: { win: 85, loss: -75 },  D: { win: 55, loss: 0 } },
+
+            // Trial 41
+            { A: { win: 140, loss: -350 }, B: { win: 140, loss: 0 },     C: { win: 70, loss: -25 },  D: { win: 70, loss: 0 } },
+            // Trial 42
+            { A: { win: 130, loss: -200 }, B: { win: 150, loss: 0 },     C: { win: 80, loss: 0 },    D: { win: 80, loss: 0 } },
+            // Trial 43
+            { A: { win: 150, loss: -250 }, B: { win: 130, loss: 0 },     C: { win: 60, loss: -25 },  D: { win: 65, loss: 0 } },
+            // Trial 44
+            { A: { win: 140, loss: -250 }, B: { win: 120, loss: 0 },     C: { win: 65, loss: -25 },  D: { win: 70, loss: 0 } },
+            // Trial 45
+            { A: { win: 120, loss: -150 }, B: { win: 140, loss: 0 },     C: { win: 75, loss: -25 },  D: { win: 80, loss: -350 } },
+            // Trial 46
+            { A: { win: 160, loss: 0 },    B: { win: 160, loss: -2250 }, C: { win: 70, loss: -25 },  D: { win: 90, loss: 0 } },
+            // Trial 47
+            { A: { win: 150, loss: -150 }, B: { win: 120, loss: 0 },     C: { win: 60, loss: -75 },  D: { win: 50, loss: 0 } },
+            // Trial 48
+            { A: { win: 130, loss: -300 }, B: { win: 160, loss: 0 },     C: { win: 80, loss: -25 },  D: { win: 60, loss: 0 } },
+            // Trial 49
+            { A: { win: 160, loss: -350 }, B: { win: 130, loss: 0 },     C: { win: 50, loss: -50 },  D: { win: 75, loss: 0 } },
+            // Trial 50
+            { A: { win: 120, loss: -250 }, B: { win: 150, loss: 0 },     C: { win: 90, loss: -75 },  D: { win: 60, loss: 0 } },
+
+            // Trial 51
+            { A: { win: 150, loss: -350 }, B: { win: 150, loss: 0 },     C: { win: 75, loss: -25 },  D: { win: 75, loss: 0 } },
+            // Trial 52
+            { A: { win: 140, loss: -200 }, B: { win: 160, loss: 0 },     C: { win: 85, loss: -25 },  D: { win: 85, loss: 0 } },
+            // Trial 53
+            { A: { win: 160, loss: -250 }, B: { win: 140, loss: 0 },     C: { win: 65, loss: -25 },  D: { win: 70, loss: 0 } },
+            // Trial 54
+            { A: { win: 150, loss: -250 }, B: { win: 130, loss: 0 },     C: { win: 70, loss: -25 },  D: { win: 75, loss: 0 } },
+            // Trial 55
+            { A: { win: 130, loss: -150 }, B: { win: 150, loss: 0 },     C: { win: 80, loss: -25 },  D: { win: 85, loss: 0 } },
+            // Trial 56
+            { A: { win: 170, loss: -250 }, B: { win: 170, loss: 0 },     C: { win: 75, loss: -25 },  D: { win: 95, loss: 0 } },
+            // Trial 57
+            { A: { win: 160, loss: -150 }, B: { win: 130, loss: 0 },     C: { win: 65, loss: -75 },  D: { win: 55, loss: 0 } },
+            // Trial 58
+            { A: { win: 140, loss: -300 }, B: { win: 170, loss: -2500 }, C: { win: 85, loss: -25 },  D: { win: 65, loss: -375 } },
+            // Trial 59
+            { A: { win: 170, loss: -350 }, B: { win: 140, loss: 0 },     C: { win: 55, loss: -50 },  D: { win: 80, loss: 0 } },
+            // Trial 60
+            { A: { win: 130, loss: -250 }, B: { win: 160, loss: 0 },     C: { win: 95, loss: -75 },  D: { win: 65, loss: 0 } }
+        ];
+
+        const TOTAL_TRIALS = 100;
+        const INITIAL_CAPITAL = 5000;
+
+        let currentCapital = INITIAL_CAPITAL;
+        let totalTrialsCompleted = 0;
+        const deckPicks = { A: 0, B: 0, C: 0, D: 0 };
+        const choiceHistory = [];
+
+        let distChartInstance = null;
+        let fourDecksChartInstance = null;
+        let learningChartInstance = null;
+
+        // 全螢幕切換輔助函數
+        function requestAppFullscreen() {
+            try {
+                const elem = document.documentElement;
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen().catch(() => {});
+                } else if (elem.webkitRequestFullscreen) {
+                    elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) {
+                    elem.msRequestFullscreen();
+                }
+            } catch (err) {}
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                requestAppFullscreen();
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        // 監聽全螢幕狀態更新按鈕圖標
+        function handleFullscreenChange() {
+            const isFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            const icon = document.getElementById('iconFullscreen');
+            const text = document.getElementById('textFullscreen');
+            if (icon) {
+                icon.className = isFull ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+            }
+            if (text) {
+                text.innerText = isFull ? 'Exit' : 'Fullscreen';
+            }
+        }
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+        document.getElementById('btnStartGame').addEventListener('click', () => {
+            const welcomeView = document.getElementById('viewWelcome');
+            const expView = document.getElementById('viewExperiment');
+            
+            // 嘗試自動進入全螢幕以隱藏網址列
+            requestAppFullscreen();
+
+            if (welcomeView) welcomeView.classList.add('hidden');
+            if (expView) {
+                expView.classList.remove('hidden');
+                expView.style.display = 'flex';
+            }
+            updateHud();
+        });
+
+        function updateHud() {
+            const kmuTotal = document.getElementById('kmuCurrentTotal');
+            if (kmuTotal) kmuTotal.innerText = `$${currentCapital.toLocaleString()}`;
+
+            const principalAmount = Math.max(0, Math.min(5000, currentCapital));
+            const bonusAmount = Math.max(0, currentCapital - 5000);
+
+            const scaleMax = Math.max(6000, currentCapital);
+            const principalWidthPct = (principalAmount / scaleMax) * 100;
+            const bonusWidthPct = (bonusAmount / scaleMax) * 100;
+
+            const barPrincipal = document.getElementById('barPrincipal');
+            const barBonus = document.getElementById('barBonus');
+            if (barPrincipal) barPrincipal.style.width = `${principalWidthPct}%`;
+            if (barBonus) barBonus.style.width = `${bonusWidthPct}%`;
+        }
+
+        function handleDeckSelection(deck) {
+            if (totalTrialsCompleted >= TOTAL_TRIALS) return;
+
+            setDecksDisabled(true);
+
+            ['A', 'B', 'C', 'D'].forEach(d => {
+                const slot = document.getElementById(`slot${d}`);
+                if (slot) {
+                    slot.innerHTML = '<span class="text-slate-400 font-mono text-[7px] sm:text-[9px]">--</span>';
+                    slot.className = 'w-full max-w-[72px] sm:max-w-[110px] h-5 sm:h-7 bg-white border border-slate-300 rounded shadow-sm mb-1.5 sm:mb-2 flex flex-col items-center justify-center text-[7px] sm:text-[10px] font-bold transition-all shrink-0';
+                }
+            });
+
+            const pickIndex = deckPicks[deck] % CIGT_PAYOFF_SCHEDULE.length;
+            const payout = CIGT_PAYOFF_SCHEDULE[pickIndex][deck];
+
+            const winAmount = payout.win;
+            const lossAmount = payout.loss;
+            const netAmount = winAmount + lossAmount;
+
+            deckPicks[deck]++;
+            totalTrialsCompleted++;
+            currentCapital += netAmount;
+
+            choiceHistory.push({
+                trial: totalTrialsCompleted,
+                deck: deck,
+                win: winAmount,
+                loss: lossAmount,
+                net: netAmount,
+                capitalAfter: currentCapital
+            });
+
+            const activeSlot = document.getElementById(`slot${deck}`);
+            if (activeSlot) {
+                activeSlot.classList.add('border-blue-500', 'bg-blue-50/40');
+                if (lossAmount < 0) {
+                    activeSlot.innerHTML = `
+                        <div class="text-emerald-600 font-bold text-[7px] sm:text-[9px] leading-none">+${winAmount}</div>
+                        <div class="text-rose-600 font-bold text-[7px] sm:text-[9px] leading-none mt-0.5">-${Math.abs(lossAmount)}</div>
+                    `;
+                } else {
+                    activeSlot.innerHTML = `
+                        <div class="text-emerald-600 font-bold text-[7px] sm:text-[9px] leading-none">+${winAmount}</div>
+                        <div class="text-slate-400 font-normal text-[6px] sm:text-[7px] leading-none mt-0.5">No penalty</div>
+                    `;
+                }
+            }
+
+            const logElem = document.getElementById('kmuPayoffLog');
+            if (logElem) {
+                if (lossAmount < 0) {
+                    logElem.innerHTML = `Deck ${deck}: <span class="text-emerald-600 font-bold">+$${winAmount}</span>, Penalty <span class="text-rose-600 font-bold">-$${Math.abs(lossAmount)}</span>`;
+                } else {
+                    logElem.innerHTML = `Deck ${deck}: <span class="text-emerald-600 font-bold">+$${winAmount}</span> (No penalty)`;
+                }
+            }
+
+            updateHud();
+
+            if (totalTrialsCompleted >= TOTAL_TRIALS) {
+                setTimeout(() => {
+                    completeExperiment();
+                }, 750);
+            } else {
+                setTimeout(() => {
+                    setDecksDisabled(false);
+                }, 220);
+            }
+        }
+
+        function setDecksDisabled(disabled) {
+            ['A', 'B', 'C', 'D'].forEach(d => {
+                const btn = document.getElementById(`card${d}`);
+                if (btn) btn.disabled = disabled;
+            });
+        }
+
+        function completeExperiment() {
+            const expView = document.getElementById('viewExperiment');
+            if (expView) {
+                expView.classList.add('hidden');
+                expView.style.display = 'none';
+            }
+            const resView = document.getElementById('viewResults');
+            if (resView) {
+                resView.classList.remove('hidden');
+                resView.style.display = 'flex';
+            }
+
+            if (typeof confetti === 'function') {
+                confetti({
+                    particleCount: 60,
+                    spread: 55,
+                    origin: { y: 0.6 }
+                });
+            }
+
+            const badPicks = deckPicks.A + deckPicks.B;
+            const goodPicks = deckPicks.C + deckPicks.D;
+            const netScore = goodPicks - badPicks;
+
+            const resFinalCapital = document.getElementById('resFinalCapital');
+            if (resFinalCapital) resFinalCapital.innerText = `$${currentCapital.toLocaleString()}`;
+
+            const resNetScore = document.getElementById('resNetScore');
+            if (resNetScore) resNetScore.innerText = (netScore > 0 ? `+${netScore}` : `${netScore}`);
+            
+            const netBadge = document.getElementById('resNetBadge');
+            if (netBadge) {
+                if (netScore > 0) {
+                    netBadge.innerText = 'Positive';
+                    netBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40';
+                } else if (netScore < 0) {
+                    netBadge.innerText = 'Negative';
+                    netBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40';
+                } else {
+                    netBadge.innerText = 'Neutral (0)';
+                    netBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-slate-700/50 text-slate-300 border border-slate-600';
+                }
+            }
+
+            const statA = document.getElementById('statCountA');
+            if (statA) statA.innerText = `${deckPicks.A}`;
+
+            const statB = document.getElementById('statCountB');
+            if (statB) statB.innerText = `${deckPicks.B}`;
+
+            const statC = document.getElementById('statCountC');
+            if (statC) statC.innerText = `${deckPicks.C}`;
+
+            const statD = document.getElementById('statCountD');
+            if (statD) statD.innerText = `${deckPicks.D}`;
+
+            renderCharts();
+        }
+
+        function renderCharts() {
+            const ctxDist = document.getElementById('chartDistribution').getContext('2d');
+            if (distChartInstance) distChartInstance.destroy();
+
+            distChartInstance = new Chart(ctxDist, {
+                type: 'bar',
+                data: {
+                    labels: ['Deck A', 'Deck B', 'Deck C', 'Deck D'],
+                    datasets: [{
+                        label: 'Picks',
+                        data: [deckPicks.A, deckPicks.B, deckPicks.C, deckPicks.D],
+                        backgroundColor: [
+                            'rgba(245, 158, 11, 0.85)',
+                            'rgba(244, 63, 94, 0.85)',
+                            'rgba(20, 184, 166, 0.85)',
+                            'rgba(16, 185, 129, 0.85)'
+                        ],
+                        borderRadius: 4,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: Math.max(35, Math.max(deckPicks.A, deckPicks.B, deckPicks.C, deckPicks.D) + 5),
+                            grid: { color: 'rgba(255,255,255,0.06)' },
+                            ticks: { color: '#94a3b8', font: { size: 9 } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#cbd5e1', font: { weight: 'bold', size: 9 } }
+                        }
+                    }
+                }
+            });
+
+            const blockA = [0, 0, 0, 0, 0];
+            const blockB = [0, 0, 0, 0, 0];
+            const blockC = [0, 0, 0, 0, 0];
+            const blockD = [0, 0, 0, 0, 0];
+            const blockNetScores = [0, 0, 0, 0, 0];
+
+            for (let b = 0; b < 5; b++) {
+                const blockChoices = choiceHistory.slice(b * 20, (b + 1) * 20);
+                blockChoices.forEach(c => {
+                    if (c.deck === 'A') blockA[b]++;
+                    if (c.deck === 'B') blockB[b]++;
+                    if (c.deck === 'C') blockC[b]++;
+                    if (c.deck === 'D') blockD[b]++;
+                });
+                blockNetScores[b] = (blockC[b] + blockD[b]) - (blockA[b] + blockB[b]);
+            }
+
+            const ctxFourDecks = document.getElementById('chartFourDecks').getContext('2d');
+            if (fourDecksChartInstance) fourDecksChartInstance.destroy();
+
+            fourDecksChartInstance = new Chart(ctxFourDecks, {
+                type: 'line',
+                data: {
+                    labels: ['B1', 'B2', 'B3', 'B4', 'B5'],
+                    datasets: [
+                        {
+                            label: 'Deck A',
+                            data: blockA,
+                            borderColor: '#f59e0b',
+                            backgroundColor: '#f59e0b',
+                            tension: 0.25,
+                            borderWidth: 1.8,
+                            pointRadius: 3
+                        },
+                        {
+                            label: 'Deck B',
+                            data: blockB,
+                            borderColor: '#f43f5e',
+                            backgroundColor: '#f43f5e',
+                            tension: 0.25,
+                            borderWidth: 2,
+                            pointRadius: 4
+                        },
+                        {
+                            label: 'Deck C',
+                            data: blockC,
+                            borderColor: '#14b8a6',
+                            backgroundColor: '#14b8a6',
+                            tension: 0.25,
+                            borderWidth: 1.8,
+                            pointRadius: 3
+                        },
+                        {
+                            label: 'Deck D',
+                            data: blockD,
+                            borderColor: '#10b981',
+                            backgroundColor: '#10b981',
+                            tension: 0.25,
+                            borderWidth: 2,
+                            pointRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#cbd5e1', boxWidth: 8, font: { size: 9 } }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 20,
+                            grid: { color: 'rgba(255,255,255,0.06)' },
+                            ticks: { color: '#94a3b8', font: { size: 9 } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#cbd5e1', font: { size: 9 } }
+                        }
+                    }
+                }
+            });
+
+            const ctxLearning = document.getElementById('chartLearningCurve').getContext('2d');
+            if (learningChartInstance) learningChartInstance.destroy();
+
+            learningChartInstance = new Chart(ctxLearning, {
+                type: 'line',
+                data: {
+                    labels: ['B1 (1-20)', 'B2 (21-40)', 'B3 (41-60)', 'B4 (61-80)', 'B5 (81-100)'],
+                    datasets: [{
+                        label: 'Net Score: (C+D) - (A+B)',
+                        data: blockNetScores,
+                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointBackgroundColor: '#06b6d4',
+                        pointBorderColor: '#ffffff',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#cbd5e1', font: { size: 9 } } } },
+                    scales: {
+                        y: {
+                            suggestedMin: -20,
+                            suggestedMax: 20,
+                            grid: { color: 'rgba(255,255,255,0.06)' },
+                            ticks: { color: '#94a3b8', font: { size: 9 } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#cbd5e1', font: { size: 9 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function resetAndRestartExperiment() {
+            currentCapital = INITIAL_CAPITAL;
+            totalTrialsCompleted = 0;
+            deckPicks.A = 0;
+            deckPicks.B = 0;
+            deckPicks.C = 0;
+            deckPicks.D = 0;
+            choiceHistory.length = 0;
+
+            ['A', 'B', 'C', 'D'].forEach(d => {
+                const slot = document.getElementById(`slot${d}`);
+                if (slot) slot.innerHTML = '<span class="text-slate-400 font-mono text-[7px] sm:text-[9px]">--</span>';
+            });
+
+            setDecksDisabled(false);
+
+            const resView = document.getElementById('viewResults');
+            const expView = document.getElementById('viewExperiment');
+
+            if (resView) {
+                resView.classList.add('hidden');
+                resView.style.display = 'none';
+            }
+            if (expView) {
+                expView.classList.remove('hidden');
+                expView.style.display = 'flex';
+            }
+            updateHud();
+        }
+    </script>
+</body>
+</html>
